@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intune PPPC Web Utility</title>
+    <meta name="description" content="Client-side, Jamf-free web app for generating macOS PPPC configuration profiles for Microsoft Intune">
+    <link rel="stylesheet" href="styles.css">
+    <!-- JSZip for reading .zip files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Simple plist parser (inline to avoid CORS issues with file:// URLs) -->
+    <script>
+    var plist = {
+        parse: function(xmlString) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlString, 'text/xml');
+            const plistNode = doc.querySelector('plist');
+            if (!plistNode) throw new Error('Invalid plist: no plist element found');
+            const rootDict = plistNode.querySelector('dict');
+            if (!rootDict) throw new Error('Invalid plist: no root dict found');
+            return this.parseDict(rootDict);
+        },
+        parseDict: function(dictNode) {
+            const result = {};
+            const children = Array.from(dictNode.children);
+            for (let i = 0; i < children.length; i += 2) {
+                const keyNode = children[i];
+                const valueNode = children[i + 1];
+                if (keyNode && keyNode.tagName === 'key' && valueNode) {
+                    result[keyNode.textContent] = this.parseValue(valueNode);
+                }
+            }
+            return result;
+        },
+        parseValue: function(node) {
+            switch (node.tagName) {
+                case 'string': return node.textContent || '';
+                case 'integer': return parseInt(node.textContent, 10);
+                case 'real': return parseFloat(node.textContent);
+                case 'true': return true;
+                case 'false': return false;
+                case 'dict': return this.parseDict(node);
+                case 'array': return Array.from(node.children).map(child => this.parseValue(child));
+                case 'data': return node.textContent;
+                case 'date': return new Date(node.textContent);
+                default: return node.textContent;
+            }
+        }
+    };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <svg class="logo" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#5a9e25" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+                    <path d="m9 12 2 2 4-4"/>
+                </svg>
+                <h1 class="title">Intune <span class="highlight">PPPC</span> Utility</h1>
+            </div>
+            <p class="subtitle">Generate macOS Privacy Preferences profiles for Microsoft Intune</p>
+            <div class="badge">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <span>100% Client-Side • No Data Leaves Your Browser</span>
+            </div>
+        </header>
+
+        <!-- App Input Section -->
+        <section class="card" id="app-input-section">
+            <div class="section-header">
+                <div class="section-icon primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" x2="12" y1="3" y2="15"/>
+                    </svg>
+                </div>
+                <h2>Select Application</h2>
+            </div>
+
+            <div class="input-grid">
+                <!-- Drag & Drop Zone -->
+                <div class="dropzone" id="dropzone">
+                    <input type="file" id="file-input" accept=".zip,.plist" />
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+                        <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+                        <path d="M10 9H8"/>
+                        <path d="M16 13H8"/>
+                        <path d="M16 17H8"/>
+                    </svg>
+                    <p>Drag & drop a <span class="neon-text-cyan">.zip</span> file</p>
+                    <p class="small">containing your .app bundle</p>
+                    <p class="small">or upload an <span class="neon-text-magenta">Info.plist</span> directly</p>
+                </div>
+
+                <!-- Known Apps -->
+                <div class="known-apps-container">
+                    <div class="dropdown-container">
+                        <button class="dropdown-trigger" id="template-trigger">
+                            <span>Or select a known application...</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron">
+                                <path d="m6 9 6 6 6-6"/>
+                            </svg>
+                        </button>
+                        <div class="dropdown-menu" id="template-menu">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selected Apps List -->
+            <div class="selected-apps-section hidden" id="selected-apps-section">
+                <div class="selected-apps-header">
+                    <h3>Selected Applications</h3>
+                    <span class="app-count" id="app-count">0 apps</span>
+                </div>
+                <div class="selected-apps-list" id="selected-apps-list">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Error Display -->
+            <div class="error-box hidden" id="error-box">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" x2="12" y1="8" y2="12"/>
+                    <line x1="12" x2="12.01" y1="16" y2="16"/>
+                </svg>
+                <p id="error-message"></p>
+            </div>
+        </section>
+
+        <!-- Profile Settings Section -->
+        <section class="card hidden" id="profile-settings-section">
+            <div class="section-header">
+                <div class="section-icon green">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+                        <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+                        <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+                        <path d="M10 6h4"/>
+                        <path d="M10 10h4"/>
+                        <path d="M10 14h4"/>
+                        <path d="M10 18h4"/>
+                    </svg>
+                </div>
+                <h2>Profile Settings</h2>
+            </div>
+
+            <div class="profile-settings-grid">
+                <!-- Organization -->
+                <div class="input-group">
+                    <label for="organizationInput">Organization</label>
+                    <input type="text" id="organizationInput" placeholder="IT Department" />
+                </div>
+
+                <!-- Payload Name -->
+                <div class="input-group">
+                    <label for="payloadNameInput">Payload Name</label>
+                    <input type="text" id="payloadNameInput" placeholder="PPPC - App Name" />
+                </div>
+
+                <!-- Payload Identifier (UUID) -->
+                <div class="input-group">
+                    <label for="payloadIdentifier">Payload Identifier (UUID)</label>
+                    <div class="uuid-input-wrapper">
+                        <input type="text" id="payloadIdentifier" placeholder="Auto-generated UUID" class="uuid-input" />
+                        <button type="button" id="regenerateUUID" class="regenerate-btn" title="Generate new UUID">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                                <path d="M21 3v5h-5"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Payload Description -->
+                <div class="input-group">
+                    <label for="payloadDescriptionInput">Payload Description <span class="optional">(optional)</span></label>
+                    <input type="text" id="payloadDescriptionInput" placeholder="Description for this profile" />
+                </div>
+            </div>
+        </section>
+
+        <!-- Permissions section is now integrated into each app card -->
+
+        <!-- Preview & Download Section -->
+        <section class="card hidden" id="preview-section">
+            <div class="section-header">
+                <div class="section-icon green">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+                        <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+                        <path d="M10 9H8"/>
+                        <path d="M16 13H8"/>
+                        <path d="M16 17H8"/>
+                    </svg>
+                </div>
+                <h2>Generated Configuration</h2>
+                <div class="header-buttons">
+                    <button class="copy-btn disabled" id="copy-btn" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                        </svg>
+                        Copy to Clipboard
+                    </button>
+                    <button class="download-btn disabled" id="download-btn" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" x2="12" y1="15" y2="3"/>
+                        </svg>
+                        Download .mobileconfig
+                    </button>
+                </div>
+            </div>
+
+            <!-- Visual Summary -->
+            <div class="summary-box hidden" id="summary-box">
+                <h3>Enabled Permissions</h3>
+                <div class="permission-tags" id="permission-tags">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Raw XML Preview -->
+            <div class="xml-preview">
+                <h3>Raw XML Preview</h3>
+                <div class="code-block">
+                    <pre id="xml-output"><!-- Select an app and enable permissions to preview --></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>This tool processes all data locally in your browser. No information is sent to any server.</p>
+            <p>Generated profiles are <strong>unsigned</strong> and ready for import into Microsoft Intune.</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
