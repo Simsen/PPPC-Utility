@@ -59,9 +59,19 @@ PPPC Builder simplifies this by allowing you to:
 1. Open the webapp  
    https://simsenblog.dk/PPPCBuilder/index.html  
 
-2. Select your macOS application
+2. Select your macOS application  
+   - Choose a **pre-defined app** from the list  
+   **or**  
+   - Upload the app’s `Info.plist` file  
 
-3. Choose the permissions required  
+   To get the `Info.plist` file:
+   - Locate the application in Finder (e.g. `/Applications`)
+   - Right-click the app
+   - Select **Show Package Contents**
+   - Open the `Contents` folder
+   - Find and upload `Info.plist`
+
+3. Choose the required permissions  
    Example:
    - Screen Recording (Standard user can toggle)
    - Full Disk Access
@@ -70,10 +80,10 @@ PPPC Builder simplifies this by allowing you to:
 4. Download the generated `.mobileconfig` file
 
 5. Upload to Microsoft Intune:
-   - Intune Admin Center  
-   - Devices → macOS → Configuration profiles  
-   - Create profile → Templates → Custom  
-   - Upload the generated file  
+   - Go to **Intune Admin Center**
+   - Devices → macOS → Configuration profiles
+   - Create profile → Templates → Custom
+   - Upload the generated file
 
 Done.
 
