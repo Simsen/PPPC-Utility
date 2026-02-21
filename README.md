@@ -1,6 +1,6 @@
 # PPPC Builder – Create macOS Privacy Policies for Intune
 
-🌐 Webapp: https://simsenblog.dk/PPPCBuilder/index.html  
+🌐 Webapp: https://simsenblog.dk/PPPCBuilder/
 
 PPPC Builder is a simple web-based tool that helps you generate **Privacy Preferences Policy Control (PPPC)** `.mobileconfig` files for macOS.
 
