@@ -4,10 +4,7 @@
   "version": "3.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "build": "tsc -b && vite build"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.11.0",
