@@ -1,4 +1,5 @@
 import { PPPC_PERMISSIONS } from './permissions';
+import { defaultCodeRequirement } from './codeRequirement';
 import type {
   AppleEventReceiver,
   Authorization,
@@ -142,10 +143,6 @@ function effectiveAuthorization(mode: AuthMode, requested: Authorization): Autho
     case 'denyOnly':
       return 'Deny';
   }
-}
-
-function defaultCodeRequirement(bundleId: string): string {
-  return `identifier "${bundleId}" and anchor apple generic`;
 }
 
 function valueWrapper(children: SettingInstance[]): ValueWrapper {
