@@ -250,6 +250,56 @@ describe('importMobileconfig', () => {
     );
   });
 
+  it('imports the first payload and warns when the profile has more than one PPPC payload', () => {
+    const firstServices = serviceArray('Camera', [
+      entryDict({
+        Identifier: 'com.example.app',
+        IdentifierType: 'bundleID',
+        Authorization: 'Deny',
+      }),
+    ]);
+    const secondServices = serviceArray('Microphone', [
+      entryDict({
+        Identifier: 'com.example.other',
+        IdentifierType: 'bundleID',
+        Authorization: 'Allow',
+      }),
+    ]);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.apple.TCC.configuration-profile-policy</string>
+            <key>Services</key>
+            <dict>
+${firstServices}
+            </dict>
+        </dict>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.apple.TCC.configuration-profile-policy</string>
+            <key>Services</key>
+            <dict>
+${secondServices}
+            </dict>
+        </dict>
+    </array>
+    <key>PayloadOrganization</key>
+    <string>Acme Corp</string>
+</dict>
+</plist>`;
+
+    const result = importMobileconfig(xml, [], 1);
+
+    expect(result.apps).toHaveLength(1);
+    expect(result.apps[0].app.bundleId).toBe('com.example.app');
+    expect(result.warnings.some((w) => w.includes('2 PPPC payloads'))).toBe(true);
+  });
+
   it('throws when the only AppleEvents entry has a CodeRequirement but an invalid receiver', () => {
     const xml = profileXml(
       serviceArray('AppleEvents', [

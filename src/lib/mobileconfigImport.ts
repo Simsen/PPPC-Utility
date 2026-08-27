@@ -58,13 +58,25 @@ function extractSettings(root: PlistDict): ProfileSettings {
   };
 }
 
-function findPppcPayload(root: PlistDict): PlistDict {
+function findPppcPayload(root: PlistDict): { payload: PlistDict; warning?: string } {
   const payloadContent = asArray(root.PayloadContent) ?? [];
-  for (const item of payloadContent) {
-    const dict = asDict(item);
-    if (dict && asString(dict.PayloadType) === PPPC_PAYLOAD_TYPE) return dict;
+  const matches = payloadContent
+    .map((item) => asDict(item))
+    .filter(
+      (dict): dict is PlistDict =>
+        !!dict && asString(dict.PayloadType) === PPPC_PAYLOAD_TYPE,
+    );
+
+  if (matches.length === 0) {
+    throw new Error('No PPPC payload found in this profile.');
   }
-  throw new Error('No PPPC payload found in this profile.');
+
+  const warning =
+    matches.length > 1
+      ? `Profile contains ${matches.length} PPPC payloads — only the first was imported.`
+      : undefined;
+
+  return { payload: matches[0], warning };
 }
 
 /**
@@ -80,9 +92,10 @@ export function importMobileconfig(
   nextIdStart: number,
 ): MobileconfigImportResult {
   const root = parsePlistDocument(xmlString);
-  const pppcPayload = findPppcPayload(root);
-  const servicesDict = asDict(pppcPayload.Services) ?? {};
   const warnings: string[] = [];
+  const { payload: pppcPayload, warning: multiPayloadWarning } = findPppcPayload(root);
+  if (multiPayloadWarning) warnings.push(multiPayloadWarning);
+  const servicesDict = asDict(pppcPayload.Services) ?? {};
   const overlays = new Map<string, AppOverlay>();
 
   function overlayFor(bundleId: string): AppOverlay {
