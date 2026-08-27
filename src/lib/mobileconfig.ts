@@ -1,6 +1,7 @@
 import { PPPC_PERMISSIONS } from './permissions';
 import { escapeXml } from './xml';
 import { generateRandomUUID } from './uuid';
+import { defaultCodeRequirement } from './codeRequirement';
 import type {
   AppleEventReceiver,
   Authorization,
@@ -41,10 +42,6 @@ function effectiveAuthorization(mode: AuthMode, requested: Authorization): Autho
       // Anything other than Deny is silently ignored by macOS for these services.
       return 'Deny';
   }
-}
-
-function defaultCodeRequirement(bundleId: string): string {
-  return `identifier "${bundleId}" and anchor apple generic`;
 }
 
 /**

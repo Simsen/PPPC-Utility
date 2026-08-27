@@ -1,6 +1,6 @@
 import type { AppInfo, KnownApp } from './types';
 
-type PlistValue =
+export type PlistValue =
   | string
   | number
   | boolean
@@ -8,12 +8,16 @@ type PlistValue =
   | PlistDict
   | PlistValue[];
 
-interface PlistDict {
+export interface PlistDict {
   [key: string]: PlistValue;
 }
 
-/** Parse an XML plist into a JS object. Ported verbatim from v2 inline parser. */
-function parsePlistXml(xmlString: string): PlistDict {
+/**
+ * Parse an XML plist (Info.plist, .mobileconfig, or any other Apple plist
+ * document) into a JS object tree. Handles nested dicts and arrays at any
+ * depth — e.g. a .mobileconfig's `PayloadContent` array of payload dicts.
+ */
+export function parsePlistDocument(xmlString: string): PlistDict {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlString, 'text/xml');
   const plistNode = doc.querySelector('plist');
@@ -68,7 +72,7 @@ function parseValue(node: Element): PlistValue {
  */
 export function parsePlist(content: string, knownApps: KnownApp[]): AppInfo {
   try {
-    const data = parsePlistXml(content);
+    const data = parsePlistDocument(content);
     const bundleId = data.CFBundleIdentifier;
     if (typeof bundleId !== 'string' || !bundleId) {
       throw new Error('No CFBundleIdentifier found in plist');
