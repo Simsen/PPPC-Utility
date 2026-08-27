@@ -184,6 +184,20 @@ export function importMobileconfig(
     }
   }
 
+  // applyCodeRequirement() registers an overlay as a side effect, so an entry
+  // that carried a CodeRequirement but was then skipped (invalid receiver,
+  // unrecognized authorization) leaves behind an empty overlay. Drop those so
+  // the guard below means "nothing usable was found" rather than "no entry
+  // mentioned a bundle ID".
+  for (const [bundleId, overlay] of Array.from(overlays.entries())) {
+    if (
+      Object.keys(overlay.standard).length === 0 &&
+      Object.keys(overlay.receivers).length === 0
+    ) {
+      overlays.delete(bundleId);
+    }
+  }
+
   if (overlays.size === 0) {
     throw new Error('This profile has no importable PPPC entries.');
   }

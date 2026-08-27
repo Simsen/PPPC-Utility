@@ -232,6 +232,40 @@ describe('importMobileconfig', () => {
       'This profile has no importable PPPC entries.',
     );
   });
+
+  it('throws when the only entry has a CodeRequirement but is otherwise unusable', () => {
+    const xml = profileXml(
+      serviceArray('Camera', [
+        entryDict({
+          Identifier: 'com.example.app',
+          IdentifierType: 'bundleID',
+          Authorization: 'Maybe',
+          CodeRequirement: defaultCodeRequirement('com.example.app'),
+        }),
+      ]),
+    );
+
+    expect(() => importMobileconfig(xml, [], 1)).toThrow(
+      'This profile has no importable PPPC entries.',
+    );
+  });
+
+  it('throws when the only AppleEvents entry has a CodeRequirement but an invalid receiver', () => {
+    const xml = profileXml(
+      serviceArray('AppleEvents', [
+        entryDict({
+          Identifier: 'com.example.app',
+          IdentifierType: 'bundleID',
+          CodeRequirement: defaultCodeRequirement('com.example.app'),
+          Authorization: 'Allow',
+        }),
+      ]),
+    );
+
+    expect(() => importMobileconfig(xml, [], 1)).toThrow(
+      'This profile has no importable PPPC entries.',
+    );
+  });
 });
 
 describe('importMobileconfig — AppleEvents', () => {
