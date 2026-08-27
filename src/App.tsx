@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Apple, ArrowLeft } from 'lucide-react';
 import { TopBar } from './components/TopBar';
 import { AppInput } from './components/AppInput';
+import { ImportProfile } from './components/ImportProfile';
 import { AppCard } from './components/AppCard';
 import { Card, CardHeader, CardBody } from './components/Card';
 import { ProfileSettings } from './components/ProfileSettings';
@@ -13,6 +14,8 @@ import { PolicyList } from './components/PolicyList';
 import { Stepper, type Step } from './components/Stepper';
 import { Toast } from './components/Toast';
 import { generateProfiles } from './lib/profiles';
+import type { MobileconfigImportResult } from './lib/mobileconfigImport';
+import type { ToastKind } from './components/Toast';
 import { generateRandomUUID } from './lib/uuid';
 import { useAuth } from './lib/auth/useAuth';
 import { loadKnownApps } from './lib/knownApps';
@@ -50,7 +53,7 @@ export default function App() {
       ),
     );
   }, []);
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; message: string } | null>(null);
+  const [toast, setToast] = useState<{ kind: ToastKind; message: string } | null>(null);
   const previousAccount = useRef(auth.account);
 
   // Surface sign-in transitions as toasts so the user can't miss them
@@ -97,6 +100,35 @@ export default function App() {
     ]);
     setNextId((id) => id + 1);
     setError(null);
+  }
+
+  function handleImportedProfile(result: MobileconfigImportResult) {
+    if (selectedApps.length > 0) {
+      const proceed = window.confirm(
+        `This will replace your current ${selectedApps.length} app${selectedApps.length === 1 ? '' : 's'} and profile settings. Continue?`,
+      );
+      if (!proceed) return;
+    }
+
+    setSelectedApps(result.apps);
+    setSettings(result.settings);
+    setNextId(Math.max(...result.apps.map((a) => a.id)) + 1);
+    setFormat('settingsCatalog');
+    setError(null);
+
+    const appCount = `${result.apps.length} app${result.apps.length === 1 ? '' : 's'}`;
+    const profileLabel = result.settings.payloadName || 'the profile';
+    if (result.warnings.length === 0) {
+      setToast({ kind: 'ok', message: `Imported ${appCount} from ${profileLabel}.` });
+    } else {
+      const warningCount = `${result.warnings.length} item${result.warnings.length === 1 ? '' : 's'}`;
+      setToast({
+        kind: 'warn',
+        message: `Imported ${appCount} from ${profileLabel}, ${warningCount} skipped:\n${result.warnings.join('\n')}`,
+      });
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function updateApp(id: number, mutate: (a: SelectedApp) => SelectedApp) {
@@ -156,6 +188,12 @@ export default function App() {
                     error={error}
                     onClearError={() => setError(null)}
                     alreadySelectedBundleIds={alreadySelectedBundleIds}
+                  />
+
+                  <ImportProfile
+                    knownApps={knownApps}
+                    nextId={nextId}
+                    onImported={handleImportedProfile}
                   />
 
                   {selectedApps.length > 0 && (
