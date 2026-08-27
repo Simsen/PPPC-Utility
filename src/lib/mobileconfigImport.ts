@@ -5,6 +5,7 @@ import { makeAppEntry } from './state';
 import { generateRandomUUID } from './uuid';
 import type {
   AppInfo,
+  AppleEventReceiver,
   Authorization,
   KnownApp,
   PermissionsState,
@@ -43,6 +44,7 @@ function asArray(v: PlistValue | undefined): PlistValue[] | undefined {
 interface AppOverlay {
   codeRequirement: string | null;
   standard: Partial<Record<string, { enabled: true; authorization: Authorization }>>;
+  receivers: Partial<Record<string, AppleEventReceiver[]>>;
 }
 
 function extractSettings(root: PlistDict): ProfileSettings {
@@ -86,7 +88,7 @@ export function importMobileconfig(
   function overlayFor(bundleId: string): AppOverlay {
     let overlay = overlays.get(bundleId);
     if (!overlay) {
-      overlay = { codeRequirement: null, standard: {} };
+      overlay = { codeRequirement: null, standard: {}, receivers: {} };
       overlays.set(bundleId, overlay);
     }
     return overlay;
@@ -129,6 +131,44 @@ export function importMobileconfig(
 
       applyCodeRequirement(bundleId, asString(entry.CodeRequirement));
 
+      if (perm.tccService === 'AppleEvents') {
+        const receiverId = asString(entry.AEReceiverIdentifier);
+        const receiverTypeRaw = asString(entry.AEReceiverIdentifierType);
+        const receiverAuthRaw = asString(entry.Authorization);
+
+        if (
+          !receiverId ||
+          (receiverTypeRaw !== 'bundleID' && receiverTypeRaw !== 'path')
+        ) {
+          warnings.push(
+            `AppleEvents entry for "${bundleId}" has an invalid receiver — skipped.`,
+          );
+          continue;
+        }
+        if (
+          !receiverAuthRaw ||
+          !VALID_AUTHORIZATIONS.includes(receiverAuthRaw as Authorization)
+        ) {
+          warnings.push(
+            `Unrecognized authorization "${receiverAuthRaw ?? ''}" for AppleEvents (bundle ${bundleId}) skipped.`,
+          );
+          continue;
+        }
+
+        const overlay = overlayFor(bundleId);
+        const list = overlay.receivers[perm.id] ?? [];
+        list.push({
+          identifier: receiverId,
+          identifierType: receiverTypeRaw as 'bundleID' | 'path',
+          codeRequirement:
+            asString(entry.AEReceiverCodeRequirement) ||
+            defaultCodeRequirement(receiverId),
+          authorization: receiverAuthRaw as Authorization,
+        });
+        overlay.receivers[perm.id] = list;
+        continue;
+      }
+
       const authRaw = asString(entry.Authorization);
       if (!authRaw || !VALID_AUTHORIZATIONS.includes(authRaw as Authorization)) {
         warnings.push(
@@ -162,6 +202,11 @@ export function importMobileconfig(
     const permissions: PermissionsState = { ...entry.permissions };
     for (const [permId, change] of Object.entries(overlay.standard)) {
       if (change) permissions[permId] = { ...permissions[permId], ...change };
+    }
+    for (const [permId, receivers] of Object.entries(overlay.receivers)) {
+      if (receivers) {
+        permissions[permId] = { ...permissions[permId], enabled: true, receivers };
+      }
     }
 
     return { ...entry, permissions };

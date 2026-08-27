@@ -233,3 +233,111 @@ describe('importMobileconfig', () => {
     );
   });
 });
+
+describe('importMobileconfig — AppleEvents', () => {
+  it('groups an AppleEvents entry into the automation permission receivers', () => {
+    const xml = profileXml(
+      serviceArray('AppleEvents', [
+        entryDict({
+          Identifier: 'com.example.app',
+          IdentifierType: 'bundleID',
+          CodeRequirement: defaultCodeRequirement('com.example.app'),
+          AEReceiverIdentifier: 'com.example.target',
+          AEReceiverIdentifierType: 'bundleID',
+          AEReceiverCodeRequirement: defaultCodeRequirement('com.example.target'),
+          Authorization: 'Allow',
+        }),
+      ]),
+    );
+
+    const result = importMobileconfig(xml, [], 1);
+    expect(result.apps).toHaveLength(1);
+    const automation = result.apps[0].permissions.automation;
+    expect(automation.enabled).toBe(true);
+    expect(automation.receivers).toEqual([
+      {
+        identifier: 'com.example.target',
+        identifierType: 'bundleID',
+        codeRequirement: defaultCodeRequirement('com.example.target'),
+        authorization: 'Allow',
+      },
+    ]);
+  });
+
+  it('groups multiple receivers for the same sender', () => {
+    const xml = profileXml(
+      serviceArray('AppleEvents', [
+        entryDict({
+          Identifier: 'com.example.app',
+          IdentifierType: 'bundleID',
+          AEReceiverIdentifier: 'com.example.target-a',
+          AEReceiverIdentifierType: 'bundleID',
+          Authorization: 'Allow',
+        }),
+        entryDict({
+          Identifier: 'com.example.app',
+          IdentifierType: 'bundleID',
+          AEReceiverIdentifier: 'com.example.target-b',
+          AEReceiverIdentifierType: 'bundleID',
+          Authorization: 'Deny',
+        }),
+      ]),
+    );
+
+    const result = importMobileconfig(xml, [], 1);
+    expect(result.apps).toHaveLength(1);
+    expect(result.apps[0].permissions.automation.receivers).toHaveLength(2);
+  });
+
+  it('skips an AppleEvents entry with an invalid receiver and records a warning', () => {
+    const xml = profileXml(
+      [
+        serviceArray('AppleEvents', [
+          entryDict({
+            Identifier: 'com.example.app',
+            IdentifierType: 'bundleID',
+            Authorization: 'Allow',
+          }),
+        ]),
+        serviceArray('Microphone', [
+          entryDict({
+            Identifier: 'com.example.app',
+            IdentifierType: 'bundleID',
+            Authorization: 'Deny',
+          }),
+        ]),
+      ].join('\n'),
+    );
+
+    const result = importMobileconfig(xml, [], 1);
+    expect(result.apps[0].permissions.automation.receivers).toEqual([]);
+    expect(result.warnings.some((w) => w.includes('invalid receiver'))).toBe(true);
+  });
+
+  it('skips an AppleEvents entry with an unrecognized receiver authorization', () => {
+    const xml = profileXml(
+      [
+        serviceArray('AppleEvents', [
+          entryDict({
+            Identifier: 'com.example.app',
+            IdentifierType: 'bundleID',
+            AEReceiverIdentifier: 'com.example.target',
+            AEReceiverIdentifierType: 'bundleID',
+            Authorization: 'Maybe',
+          }),
+        ]),
+        serviceArray('Microphone', [
+          entryDict({
+            Identifier: 'com.example.app',
+            IdentifierType: 'bundleID',
+            Authorization: 'Deny',
+          }),
+        ]),
+      ].join('\n'),
+    );
+
+    const result = importMobileconfig(xml, [], 1);
+    expect(result.apps[0].permissions.automation.receivers).toEqual([]);
+    expect(result.warnings.some((w) => w.includes('Maybe'))).toBe(true);
+  });
+});
